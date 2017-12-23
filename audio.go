@@ -85,8 +85,12 @@ func PlayAudio(audio <-chan []int16) {
 
 			if currentDevice != nil {
 				log.Printf("audio: closing audio device: dev=%s", currentDeviceName)
-				currentDevice.Close()
-				log.Printf("audio: closed")
+				// there seems to be a lulzy bug in
+				// alsa-lib around draining devices
+				// that have been removed, so fire
+				// this off to a goroutine so we at
+				// least don't break
+				go currentDevice.Close()
 			}
 
 			currentDevice = newDevice
