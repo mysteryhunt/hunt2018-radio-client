@@ -3,7 +3,7 @@ FROM resin/%%RESIN_MACHINE_NAME%%-golang:1.9
 
 ENV INITSYSTEM on
 
-RUN apt-get update && apt-get install --no-install-recommends -qy libopus-dev libasound2-dev
+RUN apt-get update && apt-get install --no-install-recommends -qy libopus-dev libasound2-dev libudev-dev
 
 COPY . $GOPATH/src/github.com/mysteryhunt/hunt2018-radio-client
 

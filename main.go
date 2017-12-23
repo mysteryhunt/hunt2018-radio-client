@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/cocoonlife/goalsa"
 	"layeh.com/gumble/gumble"
 	"layeh.com/gumble/gumbleutil"
 	_ "layeh.com/gumble/opus"
@@ -60,6 +59,7 @@ type RXState struct {
 	client         *gumble.Client
 	desiredChannel string
 	outputDevice   string
+	audio          chan<- []int16
 }
 
 func (r *RXState) ChangeChannel(newChannel string) {
@@ -113,14 +113,9 @@ func (r *RXState) OnUserChange(e *gumble.UserChangeEvent) {
 func (r *RXState) OnAudioStream(e *gumble.AudioStreamEvent) {
 	go func() {
 		log.Printf("rx: audio stream opened from: user=%s channel=%s", e.User.Name, e.User.Channel.Name)
-		stream, err := alsa.NewPlaybackDevice(r.outputDevice, 1, alsa.FormatS16LE, gumble.AudioSampleRate, alsa.BufferParams{})
-		if err != nil {
-			panic(fmt.Errorf("rx: unable to open playback stream: err=%q", err))
-		}
-
 		for packet := range e.C {
 			if packet.Sender.Channel.Name == r.desiredChannel {
-				stream.Write(packet.AudioBuffer)
+				r.audio <- packet.AudioBuffer
 			}
 		}
 	}()
@@ -156,6 +151,10 @@ func main() {
 
 	go dialLoop("tx", net.JoinHostPort(host, port), txConfig)
 
+	playbackChan := make(chan []int16)
+
+	go PlayAudio(playbackChan)
+
 	rxConfig := gumble.NewConfig()
 	rxConfig.Username = usernamePrefix + "-rx"
 	rxConfig.Password = password
@@ -163,6 +162,7 @@ func main() {
 	rxState := &RXState{
 		desiredChannel: channel,
 		outputDevice:   outputDevice,
+		audio:          playbackChan,
 	}
 	rxConfig.Attach(rxState)
 	rxConfig.AttachAudio(rxState)

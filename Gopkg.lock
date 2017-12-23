@@ -15,6 +15,24 @@
 
 [[projects]]
   branch = "master"
+  name = "github.com/jkeiser/iter"
+  packages = ["."]
+  revision = "67b94d6149c6b2efe0fde15d36a50a7692c2da17"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/jochenvg/go-udev"
+  packages = ["."]
+  revision = "d6b62d56d37b941d93a199f9cb6f0250636fd4ab"
+
+[[projects]]
+  branch = "master"
+  name = "golang.org/x/sys"
+  packages = ["unix"]
+  revision = "83801418e1b59fb1880e363299581ee543af32ca"
+
+[[projects]]
+  branch = "master"
   name = "layeh.com/gopus"
   packages = ["."]
   revision = "0ebf989153aa016ef5e77141b08c48e48a79312e"
@@ -28,6 +46,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "a6e3dd2bc69567dcb720a1799439a2621b2ff01680e337c9840862815bd67ed4"
+  inputs-digest = "71f8dfa4754ba57c9494f3dc58e734b3c2b2f0f3f6341170e506699f3ee8cc2a"
   solver-name = "gps-cdcl"
   solver-version = 1
