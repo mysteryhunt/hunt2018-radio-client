@@ -57,21 +57,23 @@ func PlayAudio(audio <-chan []int16) {
 
 	currentDeviceName := ""
 	var currentDevice *alsa.PlaybackDevice
+	defer func() {
+		if currentDevice != nil {
+			currentDevice.Close()
+		}
+	}()
 	needScan := true
 
 	for {
 		if needScan {
 			newDeviceName := pollForDevice()
-			log.Printf("audio: post scan: currentDevice=%s newDevice=%s", currentDeviceName, newDeviceName)
 			if newDeviceName == currentDeviceName {
 				needScan = false
 				continue
 			}
 
 			var newDevice *alsa.PlaybackDevice
-			if newDeviceName == "" {
-				log.Printf("audio: closing audio device")
-			} else {
+			if newDeviceName != "" {
 				log.Printf("audio: opening new audio device: dev=%s", newDeviceName)
 				newDevice, err = alsa.NewPlaybackDevice(newDeviceName, 1, alsa.FormatS16LE, gumble.AudioSampleRate, alsa.BufferParams{})
 				if err != nil {
@@ -82,7 +84,9 @@ func PlayAudio(audio <-chan []int16) {
 			}
 
 			if currentDevice != nil {
+				log.Printf("audio: closing audio device: dev=%s", currentDeviceName)
 				currentDevice.Close()
+				log.Printf("audio: closed")
 			}
 
 			currentDevice = newDevice
@@ -94,10 +98,12 @@ func PlayAudio(audio <-chan []int16) {
 		select {
 		case <-devs:
 			needScan = true
-			log.Println("audio: device change")
 		case sample := <-audio:
 			if currentDeviceName != "" {
-				currentDevice.Write(sample)
+				_, err := currentDevice.Write(sample)
+				if err != nil {
+					log.Printf("audio: error writing to device: dev=%s err=%q", currentDeviceName, err)
+				}
 			}
 		}
 	}
