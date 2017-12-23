@@ -59,6 +59,7 @@ type RXState struct {
 
 	client         *gumble.Client
 	desiredChannel string
+	outputDevice   string
 }
 
 func (r *RXState) ChangeChannel(newChannel string) {
@@ -112,7 +113,7 @@ func (r *RXState) OnUserChange(e *gumble.UserChangeEvent) {
 func (r *RXState) OnAudioStream(e *gumble.AudioStreamEvent) {
 	go func() {
 		log.Printf("rx: audio stream opened from: user=%s channel=%s", e.User.Name, e.User.Channel.Name)
-		stream, err := alsa.NewPlaybackDevice("default", 1, alsa.FormatS16LE, gumble.AudioSampleRate, alsa.BufferParams{})
+		stream, err := alsa.NewPlaybackDevice(r.outputDevice, 1, alsa.FormatS16LE, gumble.AudioSampleRate, alsa.BufferParams{})
 		if err != nil {
 			log.Printf("rx: unable to open playback stream: err=%q", err)
 		}
@@ -129,6 +130,15 @@ func main() {
 	server := mustHaveEnv("MUMBLE_SERVER")
 	usernamePrefix := mustHaveEnv("MUMBLE_USERNAME_PREFIX")
 	password := os.Getenv("MUMBLE_PASSWORD")
+
+	outputDevice := os.Getenv("RADIO_OUTPUT_DEVICE")
+	if outputDevice == "" {
+		outputDevice = "default"
+	}
+	inputDevice := os.Getenv("RADIO_INPUT_DEVICE")
+	if inputDevice == "" {
+		inputDevice = "default"
+	}
 
 	// TODO: replace this with GPIO infrastructure
 	channel := mustHaveEnv("MUMBLE_CHANNEL")
@@ -150,7 +160,10 @@ func main() {
 	rxConfig.Username = usernamePrefix + "-rx"
 	rxConfig.Password = password
 	rxConfig.Attach(gumbleutil.AutoBitrate)
-	rxState := &RXState{desiredChannel: channel}
+	rxState := &RXState{
+		desiredChannel: channel,
+		outputDevice:   outputDevice,
+	}
 	rxConfig.Attach(rxState)
 	rxConfig.AttachAudio(rxState)
 
