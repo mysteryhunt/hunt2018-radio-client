@@ -115,7 +115,7 @@ func (r *RXState) OnAudioStream(e *gumble.AudioStreamEvent) {
 		log.Printf("rx: audio stream opened from: user=%s channel=%s", e.User.Name, e.User.Channel.Name)
 		stream, err := alsa.NewPlaybackDevice(r.outputDevice, 1, alsa.FormatS16LE, gumble.AudioSampleRate, alsa.BufferParams{})
 		if err != nil {
-			log.Printf("rx: unable to open playback stream: err=%q", err)
+			panic(fmt.Errorf("rx: unable to open playback stream: err=%q", err))
 		}
 
 		for packet := range e.C {
