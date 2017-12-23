@@ -87,7 +87,7 @@ func PlayAudio(audio <-chan []int16) {
 			if currentDevice != nil {
 				log.Printf("audio: closing audio device: dev=%s", currentDeviceName)
 
-				// Removing devices that have had data sent seems problematic, but we'll try it anyway
+				// Removing devices that have had data sent seems problematic, so we'll just bail early
 				if sentDataToDevice {
 					panic("audio: closing device that has had data sent which will hang the machine")
 				}
