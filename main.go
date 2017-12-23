@@ -53,69 +53,70 @@ func dialLoop(logPrefix string, addr string, config *gumble.Config) {
 	}
 }
 
-type RXState struct {
+type ChannelForcer struct {
 	gumbleutil.Listener // default noop implementation
 
-	client         *gumble.Client
+	client *gumble.Client
+
 	desiredChannel string
-	audio          chan<- []int16
+	logPrefix      string
 }
 
-func (r *RXState) ChangeChannel(newChannel string) {
-	r.desiredChannel = newChannel
-	if r.client != nil {
-		r.client.Do(r.checkChannel)
+func (cf *ChannelForcer) ChangeChannel(newChannel string) {
+	cf.desiredChannel = newChannel
+	if cf.client != nil {
+		cf.client.Do(cf.checkChannel)
 	}
 }
 
-// checkChannel must be called with l held
-func (r *RXState) checkChannel() {
-	if r.client == nil {
+func (cf *ChannelForcer) checkChannel() {
+	if cf.client == nil {
 		return
 	}
 
-	if r.client.Self.Channel.Name == r.desiredChannel {
-		log.Printf("rx: moved into channel: channel=%s", r.desiredChannel)
+	if cf.client.Self.Channel.Name == cf.desiredChannel {
+		log.Printf("%s: moved into channel: channel=%s", cf.logPrefix, cf.desiredChannel)
 		return
 	}
 
-	channel := r.client.Channels.Find(r.desiredChannel)
+	channel := cf.client.Channels.Find(cf.desiredChannel)
 	if channel == nil {
-		log.Printf("rx: can not find channel: channel=%s", r.desiredChannel)
+		log.Printf("%s: can not find channel: channel=%s", cf.logPrefix, cf.desiredChannel)
 		return
 	}
 
-	r.client.Self.Move(channel)
+	cf.client.Self.Move(channel)
 }
 
-func (r *RXState) OnConnect(e *gumble.ConnectEvent) {
-	r.client = e.Client
-	r.checkChannel()
+func (cf *ChannelForcer) OnConnect(e *gumble.ConnectEvent) {
+	cf.client = e.Client
+	cf.checkChannel()
 }
 
-func (r *RXState) OnDisconnect(e *gumble.DisconnectEvent) {
-	r.client = nil
-	r.checkChannel()
+func (cf *ChannelForcer) OnDisconnect(e *gumble.DisconnectEvent) {
+	cf.client = nil
 }
 
-func (r *RXState) OnChannelChange(e *gumble.ChannelChangeEvent) {
+func (cf *ChannelForcer) OnChannelChange(e *gumble.ChannelChangeEvent) {
 	// channel might have gotten created
-	r.checkChannel()
+	cf.checkChannel()
 }
 
-func (r *RXState) OnUserChange(e *gumble.UserChangeEvent) {
-	if e.User == r.client.Self {
-		r.checkChannel()
+func (cf *ChannelForcer) OnUserChange(e *gumble.UserChangeEvent) {
+	if e.User == cf.client.Self {
+		cf.checkChannel()
 	}
 }
 
-func (r *RXState) OnAudioStream(e *gumble.AudioStreamEvent) {
+type RXStream struct {
+	audio chan<- []int16
+}
+
+func (r *RXStream) OnAudioStream(e *gumble.AudioStreamEvent) {
 	go func() {
 		log.Printf("rx: audio stream opened from: user=%s channel=%s", e.User.Name, e.User.Channel.Name)
 		for packet := range e.C {
-			if packet.Sender.Channel.Name == r.desiredChannel {
-				r.audio <- packet.AudioBuffer
-			}
+			r.audio <- packet.AudioBuffer
 		}
 	}()
 }
@@ -125,8 +126,9 @@ func main() {
 	usernamePrefix := mustHaveEnv("MUMBLE_USERNAME_PREFIX")
 	password := os.Getenv("MUMBLE_PASSWORD")
 
+	txChannel := mustHaveEnv("MUMBLE_TX_CHANNEL")
 	// TODO: replace this with GPIO infrastructure
-	channel := mustHaveEnv("MUMBLE_CHANNEL")
+	rxChannel := mustHaveEnv("MUMBLE_RX_CHANNEL")
 
 	host, port, err := net.SplitHostPort(server)
 	if err != nil {
@@ -138,6 +140,10 @@ func main() {
 	txConfig.Username = usernamePrefix + "-tx"
 	txConfig.Password = password
 	txConfig.Attach(gumbleutil.AutoBitrate)
+	txConfig.Attach(&ChannelForcer{
+		desiredChannel: txChannel,
+		logPrefix:      "tx",
+	})
 
 	go dialLoop("tx", net.JoinHostPort(host, port), txConfig)
 
@@ -149,12 +155,13 @@ func main() {
 	rxConfig.Username = usernamePrefix + "-rx"
 	rxConfig.Password = password
 	rxConfig.Attach(gumbleutil.AutoBitrate)
-	rxState := &RXState{
-		desiredChannel: channel,
-		audio:          playbackChan,
-	}
-	rxConfig.Attach(rxState)
-	rxConfig.AttachAudio(rxState)
+	rxConfig.Attach(&ChannelForcer{
+		desiredChannel: rxChannel,
+		logPrefix:      "rx",
+	})
+	rxConfig.AttachAudio(&RXStream{
+		audio: playbackChan,
+	})
 
 	go dialLoop("rx", net.JoinHostPort(host, port), rxConfig)
 
