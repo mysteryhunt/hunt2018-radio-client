@@ -63,6 +63,7 @@ func PlayAudio(audio <-chan []int16) {
 		}
 	}()
 	needScan := true
+	sentDataToDevice := false
 
 	for {
 		if needScan {
@@ -85,16 +86,17 @@ func PlayAudio(audio <-chan []int16) {
 
 			if currentDevice != nil {
 				log.Printf("audio: closing audio device: dev=%s", currentDeviceName)
-				// there seems to be a lulzy bug in
-				// alsa-lib around draining devices
-				// that have been removed, so fire
-				// this off to a goroutine so we at
-				// least don't break
+
+				// Removing devices that have had data sent seems problematic, but we'll try it anyway
+				if sentDataToDevice {
+					panic("audio: closing device that has had data sent which will hang the machine")
+				}
 				go currentDevice.Close()
 			}
 
 			currentDevice = newDevice
 			currentDeviceName = newDeviceName
+			sentDataToDevice = false
 
 			needScan = false
 		}
@@ -104,6 +106,7 @@ func PlayAudio(audio <-chan []int16) {
 			needScan = true
 		case sample := <-audio:
 			if currentDeviceName != "" {
+				sentDataToDevice = true
 				_, err := currentDevice.Write(sample)
 				if err != nil {
 					log.Printf("audio: error writing to device: dev=%s err=%q", currentDeviceName, err)
