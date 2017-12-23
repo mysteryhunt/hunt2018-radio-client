@@ -58,7 +58,6 @@ type RXState struct {
 
 	client         *gumble.Client
 	desiredChannel string
-	outputDevice   string
 	audio          chan<- []int16
 }
 
@@ -126,15 +125,6 @@ func main() {
 	usernamePrefix := mustHaveEnv("MUMBLE_USERNAME_PREFIX")
 	password := os.Getenv("MUMBLE_PASSWORD")
 
-	outputDevice := os.Getenv("RADIO_OUTPUT_DEVICE")
-	if outputDevice == "" {
-		outputDevice = "default"
-	}
-	inputDevice := os.Getenv("RADIO_INPUT_DEVICE")
-	if inputDevice == "" {
-		inputDevice = "default"
-	}
-
 	// TODO: replace this with GPIO infrastructure
 	channel := mustHaveEnv("MUMBLE_CHANNEL")
 
@@ -161,7 +151,6 @@ func main() {
 	rxConfig.Attach(gumbleutil.AutoBitrate)
 	rxState := &RXState{
 		desiredChannel: channel,
-		outputDevice:   outputDevice,
 		audio:          playbackChan,
 	}
 	rxConfig.Attach(rxState)
