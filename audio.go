@@ -62,6 +62,7 @@ func PlayAudio(audio <-chan []int16) {
 	for {
 		if needScan {
 			newDeviceName := pollForDevice()
+			log.Printf("audio: post scan: currentDevice=%s newDevice=%s", currentDeviceName, newDeviceName)
 			if newDeviceName == currentDeviceName {
 				needScan = false
 				continue
@@ -93,6 +94,7 @@ func PlayAudio(audio <-chan []int16) {
 		select {
 		case <-devs:
 			needScan = true
+			log.Println("audio: device change")
 		case sample := <-audio:
 			if currentDeviceName != "" {
 				currentDevice.Write(sample)
