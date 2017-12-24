@@ -136,8 +136,6 @@ func (t *TXStream) talk(done <-chan struct{}) {
 	}
 	log.Printf("tx: opening audio device: dev=%s", deviceName)
 
-	interval := t.client.Config.AudioInterval
-	// double the buffer size past what we think we need
 	periodFrames := t.client.Config.AudioFrameSize()
 	device, err := alsa.NewCaptureDevice(deviceName, 1, alsa.FormatS16LE, gumble.AudioSampleRate, alsa.BufferParams{PeriodFrames: periodFrames})
 	if err != nil {
@@ -146,25 +144,23 @@ func (t *TXStream) talk(done <-chan struct{}) {
 	}
 	defer device.Close()
 
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
 	outgoing := t.client.AudioOutgoing()
 	defer close(outgoing)
 
 	buf := make([]int16, periodFrames)
 	for {
+		_, err := device.Read(buf)
+		if err != nil && err != alsa.ErrOverrun {
+			log.Printf("tx: error reading samples from device: dev=%s err=%q", deviceName, err)
+			return
+		}
+
+		outgoing <- gumble.AudioBuffer(buf)
+
 		select {
 		case <-done:
 			return
-		case <-ticker.C:
-			_, err := device.Read(buf)
-			if err != nil && err != alsa.ErrOverrun {
-				log.Printf("tx: error reading samples from device: dev=%s err=%q", deviceName, err)
-				continue
-			}
-
-			outgoing <- gumble.AudioBuffer(buf)
+		default:
 		}
 	}
 }
