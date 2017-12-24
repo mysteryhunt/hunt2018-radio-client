@@ -156,7 +156,7 @@ func (t *TXStream) talk(done <-chan struct{}) {
 			return
 		case <-ticker.C:
 			_, err := device.Read(buf)
-			if err != nil {
+			if err != nil && err != alsa.ErrOverrun {
 				log.Printf("tx: error reading samples from device: dev=%s err=%q", deviceName, err)
 				continue
 			}

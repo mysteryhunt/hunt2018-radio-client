@@ -107,7 +107,7 @@ func PlayAudio(audio <-chan []int16) {
 			if currentDeviceName != "" {
 				sentDataToDevice = true
 				_, err := currentDevice.Write(sample)
-				if err != nil {
+				if err != nil && err != alsa.ErrUnderrun {
 					log.Printf("audio: error writing to device: dev=%s err=%q", currentDeviceName, err)
 				}
 			}
