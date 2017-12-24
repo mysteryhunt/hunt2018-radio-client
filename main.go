@@ -117,7 +117,10 @@ type TXStream struct {
 	// PTT is a channel for activating transmission. To start
 	// transmitting, send a channel that is closed when
 	// transmitting should stop
-	PTT <-chan <-chan struct{}
+	PTT chan (<-chan struct{})
+
+	// temporary, for testing
+	talkchan chan struct{}
 }
 
 func (t *TXStream) talk(done <-chan struct{}) {
@@ -174,10 +177,13 @@ func (t *TXStream) Run() {
 
 func (t *TXStream) OnConnect(e *gumble.ConnectEvent) {
 	t.client = e.Client
+	t.talkchan = make(chan struct{})
+	t.PTT <- t.talkchan
 }
 
 func (t *TXStream) OnDisconnect(e *gumble.DisconnectEvent) {
 	t.client = nil
+	close(t.talkchan)
 }
 
 type RXStream struct {
@@ -243,14 +249,6 @@ func main() {
 	})
 
 	go dialLoop("rx", net.JoinHostPort(host, port), rxConfig)
-
-	for {
-		time.Sleep(time.Second)
-		c := make(chan struct{})
-		ptt <- c
-		time.Sleep(time.Second * 5)
-		close(c)
-	}
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
