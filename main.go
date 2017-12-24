@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cocoonlife/goalsa"
 	"layeh.com/gumble/gumble"
 	"layeh.com/gumble/gumbleutil"
 	_ "layeh.com/gumble/opus"
@@ -108,6 +109,77 @@ func (cf *ChannelForcer) OnUserChange(e *gumble.UserChangeEvent) {
 	}
 }
 
+type TXStream struct {
+	gumbleutil.Listener // default noop implementation
+
+	client *gumble.Client
+
+	// PTT is a channel for activating transmission. To start
+	// transmitting, send a channel that is closed when
+	// transmitting should stop
+	PTT <-chan <-chan struct{}
+}
+
+func (t *TXStream) talk(done <-chan struct{}) {
+	if t.client == nil {
+		log.Println("tx: ptt pressed but no open connection")
+		return
+	}
+
+	deviceName := pollForDevice("CAPTURE")
+	if deviceName == "" {
+		log.Println("tx: unable to find audio capture device")
+		return
+	}
+	log.Printf("tx: opening audio device: dev=%s", deviceName)
+
+	interval := t.client.Config.AudioInterval
+	// double the buffer size past what we think we need
+	periodFrames := t.client.Config.AudioFrameSize()
+	device, err := alsa.NewCaptureDevice(deviceName, 1, alsa.FormatS16LE, gumble.AudioSampleRate, alsa.BufferParams{PeriodFrames: periodFrames})
+	if err != nil {
+		log.Printf("tx: error opening audio capture device: dev=%s err=%q", deviceName, err)
+		return
+	}
+	defer device.Close()
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	outgoing := t.client.AudioOutgoing()
+	defer close(outgoing)
+
+	buf := make([]int16, periodFrames)
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			_, err := device.Read(buf)
+			if err != nil {
+				log.Printf("tx: error reading samples from device: dev=%s err=%q", deviceName, err)
+				continue
+			}
+
+			outgoing <- gumble.AudioBuffer(buf)
+		}
+	}
+}
+
+func (t *TXStream) Run() {
+	for done := range t.PTT {
+		t.talk(done)
+	}
+}
+
+func (t *TXStream) OnConnect(e *gumble.ConnectEvent) {
+	t.client = e.Client
+}
+
+func (t *TXStream) OnDisconnect(e *gumble.DisconnectEvent) {
+	t.client = nil
+}
+
 type RXStream struct {
 	audio chan<- []int16
 }
@@ -136,6 +208,12 @@ func main() {
 		port = strconv.Itoa(gumble.DefaultPort)
 	}
 
+	ptt := make(chan (<-chan struct{}))
+
+	txStream := &TXStream{PTT: ptt}
+
+	go txStream.Run()
+
 	txConfig := gumble.NewConfig()
 	txConfig.Username = usernamePrefix + "-tx"
 	txConfig.Password = password
@@ -144,6 +222,7 @@ func main() {
 		desiredChannel: txChannel,
 		logPrefix:      "tx",
 	})
+	txConfig.Attach(txStream)
 
 	go dialLoop("tx", net.JoinHostPort(host, port), txConfig)
 
@@ -164,6 +243,14 @@ func main() {
 	})
 
 	go dialLoop("rx", net.JoinHostPort(host, port), rxConfig)
+
+	for {
+		time.Sleep(time.Second)
+		c := make(chan struct{})
+		ptt <- c
+		time.Sleep(time.Second * 5)
+		close(c)
+	}
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)

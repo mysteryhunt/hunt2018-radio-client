@@ -10,15 +10,14 @@ import (
 	"regexp"
 	"time"
 
-	"layeh.com/gumble/gumble"
-
 	"github.com/cocoonlife/goalsa"
 	"github.com/jochenvg/go-udev"
+	"layeh.com/gumble/gumble"
 )
 
 var cardRegexp = regexp.MustCompile("^/proc/asound/card([0-9]+)/pcm.*/info")
 
-func pollForDevice() string {
+func pollForDevice(stream string) string {
 retry:
 	pcms, _ := filepath.Glob("/proc/asound/card*/pcm*/info")
 
@@ -30,7 +29,7 @@ retry:
 			goto retry
 		}
 
-		if bytes.Contains(info, []byte("stream: PLAYBACK")) &&
+		if bytes.Contains(info, []byte(fmt.Sprintf("stream: %s", stream))) &&
 			bytes.Contains(info, []byte("id: USB Audio")) {
 			card := cardRegexp.FindStringSubmatch(pcm)[1]
 			return fmt.Sprintf("default:%s", card)
@@ -67,7 +66,7 @@ func PlayAudio(audio <-chan []int16) {
 
 	for {
 		if needScan {
-			newDeviceName := pollForDevice()
+			newDeviceName := pollForDevice("PLAYBACK")
 			if newDeviceName == currentDeviceName {
 				needScan = false
 				continue
