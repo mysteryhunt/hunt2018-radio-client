@@ -9,6 +9,12 @@
 
 [[projects]]
   branch = "master"
+  name = "github.com/golang/glog"
+  packages = ["."]
+  revision = "23def4e6c14b4da8ac2ed8007337bc5eb5007998"
+
+[[projects]]
+  branch = "master"
   name = "github.com/golang/protobuf"
   packages = ["proto"]
   revision = "1e59b77b52bf8e4b449a57e6f79f21226d571845"
@@ -24,6 +30,18 @@
   name = "github.com/jochenvg/go-udev"
   packages = ["."]
   revision = "d6b62d56d37b941d93a199f9cb6f0250636fd4ab"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/kidoman/embd"
+  packages = [".","host/all","host/bbb","host/generic","host/rpi","util"]
+  revision = "d3d8c0c5c68dc6caccebb7d720f36e64bafd0a62"
+
+[[projects]]
+  name = "github.com/stianeikeland/go-rpio"
+  packages = ["."]
+  revision = "896db2ee1c7f95240dd6a09e56edf9cece107a34"
+  version = "v3.0.0"
 
 [[projects]]
   branch = "master"
@@ -46,6 +64,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "71f8dfa4754ba57c9494f3dc58e734b3c2b2f0f3f6341170e506699f3ee8cc2a"
+  inputs-digest = "7c9c8cadea46f79f5cf7027dfc9dcd94d555784acf8eca4d394157147785684c"
   solver-name = "gps-cdcl"
   solver-version = 1

@@ -11,6 +11,9 @@ import (
 	"time"
 
 	"github.com/cocoonlife/goalsa"
+	"github.com/kidoman/embd"
+	_ "github.com/kidoman/embd/host/all"
+	gpio "github.com/stianeikeland/go-rpio"
 	"layeh.com/gumble/gumble"
 	"layeh.com/gumble/gumbleutil"
 	_ "layeh.com/gumble/opus"
@@ -22,6 +25,14 @@ func mustHaveEnv(name string) string {
 		panic(fmt.Sprintf("environment variable %s must be populated", name))
 	}
 	return val
+}
+
+func mustAtoi(strval string) int {
+	intval, err := strconv.Atoi(strval)
+	if err != nil {
+		panic(err)
+	}
+	return intval
 }
 
 func dialLoop(logPrefix string, addr string, config *gumble.Config) {
@@ -195,14 +206,72 @@ func (r *RXStream) OnAudioStream(e *gumble.AudioStreamEvent) {
 	}()
 }
 
+type RXChannelSwitcher struct {
+	Channel0, Channel1 string
+	ChannelPin         int
+	ChannelForcer      *ChannelForcer
+}
+
+func (rxcs *RXChannelSwitcher) updateChannel(pin embd.DigitalPin) {
+	v, err := pin.Read()
+	if err != nil {
+		log.Printf("rx: error reading from gpio pin: pin=%d err=%q", rxcs.ChannelPin, err)
+		return
+	}
+
+	if v == 0 {
+		rxcs.ChannelForcer.ChangeChannel(rxcs.Channel0)
+	} else {
+		rxcs.ChannelForcer.ChangeChannel(rxcs.Channel1)
+	}
+}
+
+func (rxcs *RXChannelSwitcher) Start() {
+	gpiopin := gpio.Pin(rxcs.ChannelPin)
+	gpiopin.Input()
+	gpiopin.PullUp()
+
+	embdpin, err := embd.NewDigitalPin(rxcs.ChannelPin)
+	if err != nil {
+		panic(err)
+	}
+
+	err = embdpin.ActiveLow(true)
+	if err != nil {
+		panic(err)
+	}
+
+	rxcs.updateChannel(embdpin)
+	err = embdpin.Watch(embd.EdgeBoth, rxcs.updateChannel)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func init() {
+	// this code seems super goroutine unsafe so just do it here
+	err := gpio.Open()
+	if err != nil {
+		panic(err)
+	}
+
+	err = embd.InitGPIO()
+	if err != nil {
+		panic(err)
+	}
+}
+
 func main() {
 	server := mustHaveEnv("MUMBLE_SERVER")
 	usernamePrefix := mustHaveEnv("MUMBLE_USERNAME_PREFIX")
 	password := os.Getenv("MUMBLE_PASSWORD")
 
+	//pttPin := mustAtoi(mustHaveEnv("GPIO_PIN_PTT"))
+	channelPin := mustAtoi(mustHaveEnv("GPIO_PIN_CHANNEL"))
+
 	txChannel := mustHaveEnv("MUMBLE_TX_CHANNEL")
-	// TODO: replace this with GPIO infrastructure
-	rxChannel := mustHaveEnv("MUMBLE_RX_CHANNEL")
+	rxChannel0 := mustHaveEnv("MUMBLE_RX_CHANNEL_0")
+	rxChannel1 := mustHaveEnv("MUMBLE_RX_CHANNEL_1")
 
 	host, port, err := net.SplitHostPort(server)
 	if err != nil {
@@ -236,10 +305,17 @@ func main() {
 	rxConfig.Username = usernamePrefix + "-rx"
 	rxConfig.Password = password
 	rxConfig.Attach(gumbleutil.AutoBitrate)
-	rxConfig.Attach(&ChannelForcer{
-		desiredChannel: rxChannel,
-		logPrefix:      "rx",
-	})
+	rxChannelForcer := &ChannelForcer{
+		logPrefix: "rx",
+	}
+	rxChannelSwitcher := &RXChannelSwitcher{
+		Channel0:      rxChannel0,
+		Channel1:      rxChannel1,
+		ChannelPin:    channelPin,
+		ChannelForcer: rxChannelForcer,
+	}
+	rxChannelSwitcher.Start()
+	rxConfig.Attach(rxChannelForcer)
 	rxConfig.AttachAudio(&RXStream{
 		audio: playbackChan,
 	})
