@@ -167,6 +167,11 @@ func (t *TXStream) talk(done <-chan struct{}) {
 			return
 		}
 
+		// apply a gain multiple by hand because ALSA is hard :(
+		for i := range buf {
+			buf[i] = buf[i] << 3
+		}
+
 		outgoing <- gumble.AudioBuffer(buf)
 
 		select {
