@@ -75,6 +75,10 @@ type ChannelForcer struct {
 }
 
 func (cf *ChannelForcer) ChangeChannel(newChannel string) {
+	if cf.desiredChannel == newChannel {
+		return
+	}
+
 	cf.desiredChannel = newChannel
 	if cf.client != nil {
 		cf.client.Do(cf.checkChannel)
@@ -129,9 +133,6 @@ type TXStream struct {
 	// transmitting, send a channel that is closed when
 	// transmitting should stop
 	PTT chan (<-chan struct{})
-
-	// temporary, for testing
-	talkchan chan struct{}
 }
 
 func (t *TXStream) talk(done <-chan struct{}) {
@@ -184,13 +185,10 @@ func (t *TXStream) Run() {
 
 func (t *TXStream) OnConnect(e *gumble.ConnectEvent) {
 	t.client = e.Client
-	t.talkchan = make(chan struct{})
-	t.PTT <- t.talkchan
 }
 
 func (t *TXStream) OnDisconnect(e *gumble.DisconnectEvent) {
 	t.client = nil
-	close(t.talkchan)
 }
 
 type RXStream struct {
@@ -248,6 +246,56 @@ func (rxcs *RXChannelSwitcher) Start() {
 	}
 }
 
+type TXPTTHandler struct {
+	PTTPin   int
+	PTTChan  chan<- <-chan struct{}
+	openChan chan struct{}
+}
+
+func (ptt *TXPTTHandler) handlePTT(pin embd.DigitalPin) {
+	v, err := pin.Read()
+	if err != nil {
+		log.Printf("tx: error reading from gpio pin: pin=%d err=%q", ptt.PTTPin, err)
+	}
+
+	if v == 0 {
+		if ptt.openChan == nil {
+			return
+		}
+
+		close(ptt.openChan)
+		ptt.openChan = nil
+	} else {
+		if ptt.openChan != nil {
+			return
+		}
+
+		ptt.openChan = make(chan struct{})
+		ptt.PTTChan <- ptt.openChan
+	}
+}
+
+func (ptt *TXPTTHandler) Start() {
+	gpiopin := gpio.Pin(ptt.PTTPin)
+	gpiopin.Input()
+	gpiopin.PullUp()
+
+	embdpin, err := embd.NewDigitalPin(ptt.PTTPin)
+	if err != nil {
+		panic(err)
+	}
+
+	err = embdpin.ActiveLow(true)
+	if err != nil {
+		panic(err)
+	}
+
+	err = embdpin.Watch(embd.EdgeBoth, ptt.handlePTT)
+	if err != nil {
+		panic(err)
+	}
+}
+
 func init() {
 	// this code seems super goroutine unsafe so just do it here
 	err := gpio.Open()
@@ -266,7 +314,7 @@ func main() {
 	usernamePrefix := mustHaveEnv("MUMBLE_USERNAME_PREFIX")
 	password := os.Getenv("MUMBLE_PASSWORD")
 
-	//pttPin := mustAtoi(mustHaveEnv("GPIO_PIN_PTT"))
+	pttPin := mustAtoi(mustHaveEnv("GPIO_PIN_PTT"))
 	channelPin := mustAtoi(mustHaveEnv("GPIO_PIN_CHANNEL"))
 
 	txChannel := mustHaveEnv("MUMBLE_TX_CHANNEL")
@@ -294,6 +342,12 @@ func main() {
 		logPrefix:      "tx",
 	})
 	txConfig.Attach(txStream)
+
+	txPTTHandler := &TXPTTHandler{
+		PTTPin:  pttPin,
+		PTTChan: ptt,
+	}
+	txPTTHandler.Start()
 
 	go dialLoop("tx", net.JoinHostPort(host, port), txConfig)
 
