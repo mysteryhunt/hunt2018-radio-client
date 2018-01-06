@@ -4,9 +4,11 @@ FROM resin/%%RESIN_MACHINE_NAME%%-golang:1.9-slim
 ENV INITSYSTEM on
 
 RUN apt-get update && \
-  apt-get install --no-install-recommends -qy pkg-config libopus-dev libasound2-dev libudev-dev alsa-utils
+  apt-get install --no-install-recommends -qy pkg-config libopus-dev libasound2-dev libudev-dev alsa-utils python-dbus
 
 COPY . $GOPATH/src/github.com/mysteryhunt/hunt2018-radio-client
+RUN mkdir -p /opt
+COPY wifisetup /opt/wifisetup
 
 WORKDIR $GOPATH
 RUN go install github.com/mysteryhunt/hunt2018-radio-client

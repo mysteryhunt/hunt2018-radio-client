@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strconv"
 	"syscall"
@@ -315,6 +316,12 @@ func init() {
 }
 
 func main() {
+	cmd := exec.Command("/opt/wifisetup")
+	err := cmd.Run()
+	if err != nil {
+		log.Printf("wifisetup: error running command: err=%q", err)
+	}
+
 	server := mustHaveEnv("MUMBLE_SERVER")
 	usernamePrefix := mustHaveEnv("MUMBLE_USERNAME_PREFIX")
 	password := os.Getenv("MUMBLE_PASSWORD")

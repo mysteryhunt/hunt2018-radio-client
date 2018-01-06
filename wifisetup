@@ -1,0 +1,90 @@
+#!/usr/bin/env python
+
+from __future__ import absolute_import, division, print_function
+
+import os
+import re
+
+import dbus
+
+NM_NAME_PREFIX = 'org.freedesktop.NetworkManager'
+NM_PATH_PREFIX = '/org/freedesktop/NetworkManager'
+
+
+def get_configured_networks():
+    """Return a list of configured SSIDs
+
+    (Assume that SSID is a sufficient identifier)
+
+    This will start its own GLib event loop, so don't call it if there's
+    already one.
+    """
+    ssids = []
+
+    bus = dbus.SystemBus()
+    settings_proxy = bus.get_object(
+        NM_NAME_PREFIX, NM_PATH_PREFIX + '/Settings')
+    connections = (dbus.Interface(settings_proxy, dbus.PROPERTIES_IFACE).
+                   Get(NM_NAME_PREFIX + '.Settings', 'Connections'))
+    for path in connections:
+        connection_proxy = bus.get_object(
+            NM_NAME_PREFIX, path)
+        connection_settings = (dbus.Interface(
+            connection_proxy, NM_NAME_PREFIX + '.Settings.Connection').
+            GetSettings(byte_arrays=True))
+        if connection_settings['connection']['type'] != '802-11-wireless':
+            continue
+        ssids.append(str(connection_settings['802-11-wireless']['ssid']))
+
+    return ssids
+
+def create_network(ssid, psk):
+    conn = {
+        'connection': {
+            'id': 'wifisetup-{}'.format(re.sub('[^0-9A-Za-z]+', '', ssid)),
+            'type': '802-11-wireless',
+        },
+        '802-11-wireless': {
+            'ssid': dbus.ByteArray(ssid),
+            'hidden': True,  # just in case
+        },
+        'ipv4': {
+            'method': 'auto',
+        },
+        'ipv6': {
+            'method': 'auto',
+        },
+    }
+
+    if psk:
+        conn['802-11-wireless-security'] = {
+            'auth-alg': 'open',
+            'key-mgmt': 'wpa-psk',
+            'psk': psk,
+        }
+
+    bus = dbus.SystemBus()
+    settings_proxy = bus.get_object(
+        NM_NAME_PREFIX, NM_PATH_PREFIX + '/Settings')
+    dbus.Interface(
+        settings_proxy, NM_NAME_PREFIX + ".Settings").AddConnection(conn)
+
+def main():
+    actual_networks = set(get_configured_networks())
+
+    # look for networks in the environment
+    desired_networks = []
+    for k, v in os.environ.items():
+        if not k.startswith('WIFISETUP_'):
+            continue
+        ssid = k[len('WIFISETUP_'):]
+        if ssid in actual_networks:
+            continue
+        psk = v if v != '' else None
+        desired_networks.append((ssid, psk))
+
+    for (ssid, psk) in desired_networks:
+        create_network(ssid, psk)
+
+if __name__ == '__main__':
+    main()
