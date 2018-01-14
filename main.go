@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"net"
@@ -322,6 +324,14 @@ func main() {
 		log.Printf("wifisetup: error running command: err=%q", err)
 	}
 
+	randomBytes := make([]byte, 4)
+	_, err = rand.Read(randomBytes)
+	if err != nil {
+		panic(err)
+	}
+	randomSuffix := make([]byte, hex.EncodedLen(len(randomBytes)))
+	hex.Encode(randomSuffix, randomBytes)
+
 	server := mustHaveEnv("MUMBLE_SERVER")
 	usernamePrefix := mustHaveEnv("MUMBLE_USERNAME_PREFIX")
 	password := os.Getenv("MUMBLE_PASSWORD")
@@ -346,7 +356,7 @@ func main() {
 	go txStream.Run()
 
 	txConfig := gumble.NewConfig()
-	txConfig.Username = usernamePrefix + "-tx"
+	txConfig.Username = fmt.Sprintf("%s-tx-%s", usernamePrefix, string(randomSuffix))
 	txConfig.Password = password
 	txConfig.Attach(gumbleutil.AutoBitrate)
 	txConfig.Attach(&ChannelForcer{
@@ -368,7 +378,7 @@ func main() {
 	go PlayAudio(playbackChan)
 
 	rxConfig := gumble.NewConfig()
-	rxConfig.Username = usernamePrefix + "-rx"
+	rxConfig.Username = fmt.Sprintf("%s-rx-%s", usernamePrefix, string(randomSuffix))
 	rxConfig.Password = password
 	rxConfig.Attach(gumbleutil.AutoBitrate)
 	rxChannelForcer := &ChannelForcer{
