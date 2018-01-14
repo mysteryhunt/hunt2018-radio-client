@@ -38,7 +38,7 @@ func mustAtoi(strval string) int {
 	return intval
 }
 
-func dialLoop(logPrefix string, addr string, config *gumble.Config) {
+func dialLoop(logPrefix string, addr string, config *gumble.Config, usernamePrefix string) {
 	disconnected := make(chan struct{})
 	retryCount := 0
 
@@ -54,7 +54,16 @@ func dialLoop(logPrefix string, addr string, config *gumble.Config) {
 	})
 
 	for {
-		_, err := gumble.Dial(addr, config)
+		randomBytes := make([]byte, 4)
+		_, err := rand.Read(randomBytes)
+		if err != nil {
+			panic(err)
+		}
+		randomSuffix := make([]byte, hex.EncodedLen(len(randomBytes)))
+		hex.Encode(randomSuffix, randomBytes)
+		config.Username = fmt.Sprintf("%s-%s", usernamePrefix, string(randomSuffix))
+
+		_, err = gumble.Dial(addr, config)
 		if err != nil {
 			log.Printf("%s: error while connecting: attempt=%d err=%q", logPrefix, retryCount, err)
 			retryCount++
@@ -324,14 +333,6 @@ func main() {
 		log.Printf("wifisetup: error running command: err=%q", err)
 	}
 
-	randomBytes := make([]byte, 4)
-	_, err = rand.Read(randomBytes)
-	if err != nil {
-		panic(err)
-	}
-	randomSuffix := make([]byte, hex.EncodedLen(len(randomBytes)))
-	hex.Encode(randomSuffix, randomBytes)
-
 	server := mustHaveEnv("MUMBLE_SERVER")
 	usernamePrefix := mustHaveEnv("MUMBLE_USERNAME_PREFIX")
 	password := os.Getenv("MUMBLE_PASSWORD")
@@ -356,7 +357,6 @@ func main() {
 	go txStream.Run()
 
 	txConfig := gumble.NewConfig()
-	txConfig.Username = fmt.Sprintf("%s-tx-%s", usernamePrefix, string(randomSuffix))
 	txConfig.Password = password
 	txConfig.Attach(gumbleutil.AutoBitrate)
 	txConfig.Attach(&ChannelForcer{
@@ -371,14 +371,13 @@ func main() {
 	}
 	txPTTHandler.Start()
 
-	go dialLoop("tx", net.JoinHostPort(host, port), txConfig)
+	go dialLoop("tx", net.JoinHostPort(host, port), txConfig, fmt.Sprintf("%s-tx", usernamePrefix))
 
 	playbackChan := make(chan []int16)
 
 	go PlayAudio(playbackChan)
 
 	rxConfig := gumble.NewConfig()
-	rxConfig.Username = fmt.Sprintf("%s-rx-%s", usernamePrefix, string(randomSuffix))
 	rxConfig.Password = password
 	rxConfig.Attach(gumbleutil.AutoBitrate)
 	rxChannelForcer := &ChannelForcer{
@@ -396,7 +395,7 @@ func main() {
 		audio: playbackChan,
 	})
 
-	go dialLoop("rx", net.JoinHostPort(host, port), rxConfig)
+	go dialLoop("rx", net.JoinHostPort(host, port), rxConfig, fmt.Sprintf("%s-rx", usernamePrefix))
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
